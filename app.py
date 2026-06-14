@@ -3,7 +3,6 @@ load_dotenv()
 import streamlit as st
 import os
 import json
-import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 from openai import OpenAI
@@ -18,171 +17,225 @@ client = OpenAI(
     base_url="https://api.deepseek.com"
 )
 
-# 页面设置
-st.set_page_config(page_title="AI职业导航 Agent", page_icon="🧭", layout="centered")
+# 页面基础设置
+st.set_page_config(page_title="AI职业导航 Agent v2.0", page_icon="🧭", layout="centered")
 
-# 自定义一些基础 CSS 来贴近你的原型风格
+# 注入自定义样式，提升产品视觉高级感
 st.markdown("""
 <style>
-    .match-score {font-size: 40px; font-weight: bold; color: #534AB7;}
-    .gap-card {padding: 15px; border-radius: 10px; border: 1px solid #eee; margin-bottom: 10px; background: #fff;}
-    .task-card {padding: 10px; border-left: 4px solid #534AB7; background: #f8f9fa; margin-bottom: 10px;}
-    .res-tag {background: #EEEDFE; color: #534AB7; padding: 3px 8px; border-radius: 10px; font-size: 12px; margin-right: 5px;}
+    .match-banner { background: #EEEDFE; padding: 20px; border-radius: 12px; border-left: 5px solid #534AB7; margin-bottom: 20px; }
+    .match-score { font-size: 45px; font-weight: bold; color: #534AB7; line-height: 1; }
+    .calc-box { background: #f9f9fb; padding: 15px; border-radius: 8px; border: 1px dashed #AFA9EC; margin: 15px 0; }
+    .jd-card { background: #fff; padding: 15px; border-radius: 10px; border: 1px solid #eef; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+    .gap-card { padding: 15px; border-radius: 10px; border: 1px solid #ffebeb; margin-bottom: 12px; background: #fff; border-left: 4px solid #ff4d4d; }
+    .task-card { padding: 15px; border-left: 4px solid #534AB7; background: #f8f9fa; margin-bottom: 15px; border-radius: 0 8px 8px 0; }
+    .kpi-tag { background: #E1F5EE; color: #0F6E56; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+    .res-tag { background: #EEEDFE; color: #534AB7; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
 </style>
 """, unsafe_allow_html=True)
 
-# 提取 PDF 文本的辅助函数
+# PDF 解析辅助函数
 def extract_text_from_pdf(uploaded_file):
     try:
         reader = PyPDF2.PdfReader(uploaded_file)
         text = ""
         for page in reader.pages:
-            text += page.extract_text() + "\n"
+            text += page.extract_text() or ""
         return text
     except Exception as e:
         return f"无法读取简历内容: {e}"
 
-# 调用 DeepSeek 进行分析
-def generate_career_analysis(target_job, experience, resume_text):
-    prompt = f"""你是一个专业的AI职业规划Agent。
-用户的目标岗位是：{target_job}
-工作经验：{experience}
-用户的简历/背景简述如下：
-{resume_text}
+# 大模型核心调用函数
+def generate_advanced_career_agent(jd_text, resume_text, experience):
+    prompt = f"""你是一个顶尖的AI职业规划Agent。
+请深度解析用户提供的数据：
+1. 目标岗位的招聘JD文本：
+\"\"\"{jd_text}\"\"\"
 
-请分析该用户与目标岗位的匹配度，并输出严格的 JSON 格式数据。请直接返回JSON，不要包含```json等Markdown标记。数据结构必须严格如下：
+2. 用户的个人简历/背景：
+\"\"\"{resume_text}\"\"\"
+
+3. 用户当前工作年限：{experience}
+
+请完成以下三层任务，并严格输出 JSON 格式。不要包含 ```json 等 Markdown 标记，确保其可以直接被 json.loads 解析：
+1. 岗位画像：从 JD 中逆向推导其最看重的 5 个核心能力维度及评分、核心高频关键词、以及招聘描述里透露出的典型业务项目。
+2. 能力分析与加权计算：计算匹配度（满分100%）。**必须给出明确的数学计算公式与权重比例**，让用户心服口服。找出 2-3 个核心 Gap。
+3. 落地路线图：针对 Gap，制定前两周（Week 1 和 Week 2）的魔鬼通关计划，必须包含「具体目标」、「核心考点」以及极具可执行性的「验收标准(KPI)」。
+
+JSON 数据结构必须严格如下：
 {{
-    "match_score": 72,
-    "radar_data": {{"产品思维": 90, "数据分析": 69, "AI认知": 77, "项目管理": 60, "用户研究": 52, "商业分析": 52}},
-    "gaps": [
-        {{"name": "数据驱动决策", "desc": "SQL查询与A/B实验设计能力不足", "priority": "高", "color": "red"}},
-        {{"name": "商业分析框架", "desc": "竞品分析和商业模式理解", "priority": "低", "color": "green"}}
-    ],
-    "roadmap": [
+    "jd_profile": {{
+        "job_name": "目标岗位名称",
+        "core_abilities": {{"维度1": 95, "维度2": 90, "维度3": 85, "维度4": 80, "维度5": 70}},
+        "high_frequency_keywords": ["关键词1", "关键词2", "关键词3"],
+        "typical_projects": ["项目背景/场景1", "项目背景/场景2"]
+    }},
+    "analysis": {{
+        "match_score": 72,
+        "formula": "总分 = 核心维度1(30%) + 核心维度2(30%) + ...",
+        "calculation_table": [
+            {{"dimension": "维度1", "score": 80, "weight": "30%", "weighted_score": 24}}
+        ],
+        "gaps": [
+            {{"name": "Gap名称", "desc": "具体能力欠缺描述", "priority": "高"}}
+        ]
+    }},
+    "action_roadmap": [
         {{
-            "phase": "30天 · 夯实基础",
-            "tasks": [
-                {{"name": "SQL 与数据分析入门", "meta": "每天1小时 · 预计20天完成", "resources": ["慕课网SQL课", "Mode实操"]}}
-            ]
+            "week": "Week 1",
+            "theme": "第一周学习主题",
+            "goal": "具体要达到的目标",
+            "points": ["核心知识点1", "核心知识点2"],
+            "kpi": "具体的验收标准，例如：在LeetCode完成10道题/输出1份PRD文档",
+            "resources": ["具体资源/工具1"]
         }}
     ]
-}}
-请根据用户简历和岗位要求，生成真实合理的分析内容。"""
+}}"""
 
     response = client.chat.completions.create(
-        model="deepseek-chat", # 使用基础模型或 flash 模型
+        model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.3, # 降低随机性，保证结构稳定
-        max_tokens=2000
+        temperature=0.2,
+        max_tokens=2500
     )
     
     raw_content = response.choices[0].message.content
-    # 清理可能存在的 markdown 标记
     clean_content = raw_content.replace('```json', '').replace('```', '').strip()
     return json.loads(clean_content)
 
-# 初始化 Session State
-if "analysis_data" not in st.session_state:
-    st.session_state.analysis_data = None
+# 初始化 Session State 状态机
+if "agent_v2_data" not in st.session_state:
+    st.session_state.agent_v2_data = None
 
-# UI 布局：三个 Tabs
-tab1, tab2, tab3 = st.tabs(["🏠 首页配置", "📊 能力分析", "🗺️ 成长路线"])
+# UI 架构：定义三大Tab
+tab1, tab2, tab3 = st.tabs(["🎯 岗位画像", "📊 匹配度分析", "🗺️ 周级路线图"])
 
-# ================= Tab 1: 首页 =================
-with tab1:
-    st.markdown("<h2 style='text-align: center;'>🧭 AI职业导航</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: gray;'>智能分析，精准规划你的职业路径</p>", unsafe_allow_html=True)
+# ================= 侧边栏：输入与配置中心 =================
+with st.sidebar:
+    st.markdown("### 🧭 AI Agent 配置中心")
+    st.caption("在这里输入源数据，驱动下方全链路分析")
     
-    target_job = st.text_input("🎯 目标岗位", value="AI产品经理")
-    experience = st.selectbox("⏳ 工作年限", ["应届生（0年）", "初级（1-3年）", "中级（3-5年）", "高级（5年+）"], index=1)
+    experience = st.selectbox("⏳ 你的当前资历", ["应届生（0年）", "初级（1-3年）", "中级（3-5年）", "高级（5年+）"], index=1)
     
-    uploaded_file = st.file_uploader("📄 上传简历 (PDF)", type=["pdf"])
-    manual_resume = st.text_area("或者直接粘贴你的简历/背景简述", height=150, placeholder="例如：某大学计算机系毕业，做过半年后端开发，熟悉Python...")
+    st.markdown("---")
+    st.markdown("**1. 粘贴你想投递的岗位 JD**")
+    jd_input = st.text_area("直接复制招聘网站(如Boss直聘)的职位描述", height=200, 
+                            placeholder="例如：负责大模型Agent产品的设计...熟练掌握SQL...有RAG落地经验者优先...")
     
-    if st.button("✨ 开始AI诊断", use_container_width=True, type="primary"):
+    st.markdown("---")
+    st.markdown("**2. 提供你的个人简历**")
+    uploaded_file = st.file_uploader("上传个人简历 (PDF)", type=["pdf"])
+    manual_resume = st.text_area("或者直接粘贴你的经历简述", height=150, placeholder="例如：两年开发经验，熟悉Python，但没有独立做过产品经理...")
+
+    st.markdown("---")
+    if st.button("🚀 启动全链路 AI 诊断", use_container_width=True, type="primary"):
         resume_text = manual_resume
         if uploaded_file is not None:
             resume_text = extract_text_from_pdf(uploaded_file)
             
-        if not resume_text.strip():
-            st.warning("请提供简历或背景描述，以便AI进行精准分析！")
+        if not jd_input.strip() or not resume_text.strip():
+            st.error("❌ 岗位JD 和 个人简历 均为必填项，请补充完整后再行诊断！")
         else:
-            with st.spinner("🧠 正在深度解析你的背景与岗位要求的匹配度..."):
+            with st.spinner("🧠 Agent 正在深度解构岗位需求并交叉对比简历..."):
                 try:
-                    result = generate_career_analysis(target_job, experience, resume_text)
-                    st.session_state.analysis_data = result
-                    st.success("✅ 分析完成！请点击上方「📊 能力分析」和「🗺️ 成长路线」查看结果。")
+                    result = generate_advanced_career_agent(jd_input, resume_text, experience)
+                    st.session_state.agent_v2_data = result
+                    st.success("✅ 诊断成功！数据已分流至右侧各个看板。")
                 except Exception as e:
-                    st.error(f"分析失败，请重试。错误信息: {e}")
+                    st.error(f"诊断遭遇意外，错误排查: {e}")
 
-# ================= Tab 2: 能力分析 =================
-with tab2:
-    data = st.session_state.analysis_data
+# ================= Tab 1: 岗位画像页 =================
+with tab1:
+    data = st.session_state.agent_v2_data
     if not data:
-        st.info("请先在首页完成 AI 诊断。")
+        st.info("👋 欢迎来到 **AI职业导航 Agent v2.0**！请先在左侧输入 **岗位JD** 和 **个人简历**，并点击「启动全链路 AI 诊断」。")
     else:
-        # 1. 匹配度横幅
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown(f"<div class='match-score'>{data['match_score']}%</div>", unsafe_allow_html=True)
-            st.write("**岗位匹配度**")
-        with col2:
-            st.write(f"目标：85% | 当前：{data['match_score']}%")
-            st.progress(data['match_score'] / 100.0)
-            st.caption(f"还差 {85 - data['match_score']}% 达到核心要求")
+        profile = data['jd_profile']
+        st.markdown(f"## 🎯 岗位画像：{profile['job_name']}")
+        st.caption("AI 帮你想明白：这个岗位到底在招什么样的人？底层硬性指标是什么？")
         
-        st.divider()
-        
-        # 2. 雷达图
-        st.markdown("#### 📡 能力雷达图")
-        radar_dict = data['radar_data']
-        df_radar = pd.DataFrame(dict(
-            r=list(radar_dict.values()),
-            theta=list(radar_dict.keys())
-        ))
-        df_radar = pd.concat([df_radar, df_radar.iloc[[0]]]) # 闭合雷达图
+        # 1. 核心能力雷达图
+        st.markdown("#### 📡 岗位核心能力大盘")
+        abilities = profile['core_abilities']
+        df_radar = pd.DataFrame(dict(r=list(abilities.values()), theta=list(abilities.keys())))
+        df_radar = pd.concat([df_radar, df_radar.iloc[[0]]]) # 闭合图表
         
         fig = go.Figure(data=go.Scatterpolar(
-          r=df_radar['r'],
-          theta=df_radar['theta'],
-          fill='toself',
-          line_color='#534AB7',
-          fillcolor='rgba(83, 74, 183, 0.3)'
+            r=df_radar['r'], theta=df_radar['theta'], fill='toself',
+            line_color='#534AB7', fillcolor='rgba(83, 74, 183, 0.2)'
         ))
-        fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])), showlegend=False, margin=dict(l=40, r=40, t=20, b=20))
+        fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])), showlegend=False, margin=dict(l=40, r=40, t=30, b=30))
         st.plotly_chart(fig, use_container_width=True)
+        
+        # 2. 高频硬考点与典型项目
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("##### 🔑 JD高频关键词 (硬考点)")
+            for kw in profile['high_frequency_keywords']:
+                st.markdown(f"<div class='jd-card'>🔥 <b>{kw}</b></div>", unsafe_allow_html=True)
+        with col2:
+            st.markdown("##### 💼 典型业务/项目场景")
+            for proj in profile['typical_projects']:
+                st.markdown(f"<div class='jd-card'>🧱 {proj}</div>", unsafe_allow_html=True)
+
+# ================= Tab 2: 能力分析页（解密 72%） =================
+with tab2:
+    data = st.session_state.agent_v2_data
+    if not data:
+        st.info("💡 请先在左侧完成 AI 诊断。")
+    else:
+        analysis = data['analysis']
+        
+        # 1. 匹配度展示
+        st.markdown("<div class='match-banner'>", unsafe_allow_html=True)
+        st.markdown(f"<span style='font-size:14px; color:#3C3489;'>⚖️ 深度加权复核</span>", unsafe_allow_html=True)
+        st.markdown(f"<div class='match-score'>{analysis['match_score']}%</div>", unsafe_allow_html=True)
+        st.markdown(f"<p style='margin-top:10px; color:#534AB7; font-size:13px;'><b>计算依据公式：</b><br>{analysis['formula']}</p>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        # 2. 计算明细表
+        st.markdown("#### 🔢 维度得分明细表")
+        df_calc = pd.DataFrame(analysis['calculation_table'])
+        df_calc.columns = ["评估维度", "你的得分", "权重占比", "加权贡献分"]
+        st.table(df_calc)
         
         st.divider()
         
-        # 3. 能力 Gap 列表
-        st.markdown("#### ⚠️ 能力 Gap 列表")
-        for gap in data['gaps']:
-            color_map = {"高": "🔴", "中": "🟡", "低": "🟢"}
-            icon = color_map.get(gap.get("priority", "中"), "🔵")
+        # 3. 核心 Gap 列表
+        st.markdown("#### ⚠️ 你的核心能力 Gap 盘点")
+        for gap in analysis['gaps']:
             st.markdown(f"""
             <div class="gap-card">
-                <strong>{icon} {gap['name']}</strong> <span style="float:right; font-size:12px; color:gray;">{gap['priority']}优先级</span><br>
-                <span style="font-size: 14px; color: #666;">{gap['desc']}</span>
+                <strong>⚡ {gap['name']}</strong> <span style="float:right; font-size:11px; background:#fff0f0; color:#ff4d4d; padding:2px 6px; border-radius:4px;">{gap['priority']}优先级</span><br>
+                <span style="font-size: 13px; color: #555; display:inline-block; margin-top:6px;">{gap['desc']}</span>
             </div>
             """, unsafe_allow_html=True)
 
-# ================= Tab 3: 成长路线 =================
+# ================= Tab 3: 成长路线页（落地执行） =================
 with tab3:
-    data = st.session_state.analysis_data
+    data = st.session_state.agent_v2_data
     if not data:
-        st.info("请先在首页完成 AI 诊断。")
+        st.info("💡 请先在左侧完成 AI 诊断。")
     else:
-        st.info("💡 基于你的能力分析，AI 为你生成了以下个性化学习路线")
+        st.markdown("## 🗺️ 针对性突击行动计划")
+        st.info("🏃‍♂️ 别再泛泛而谈！以下是 Agent 为你量身制定的高阶实战通关指标：")
         
-        for phase in data['roadmap']:
-            st.markdown(f"### 🚩 {phase['phase']}")
-            for task in phase['tasks']:
-                resources_html = "".join([f"<span class='res-tag'>🏷️ {res}</span>" for res in task['resources']])
-                st.markdown(f"""
-                <div class="task-card">
-                    <strong>{task['name']}</strong><br>
-                    <span style="font-size: 12px; color: gray;">{task['meta']}</span><br>
-                    <div style="margin-top: 8px;">{resources_html}</div>
+        for plan in data['action_roadmap']:
+            st.markdown(f"### 🏁 {plan['week']}: {plan['theme']}")
+            
+            # 拼装核心考点标签
+            points_html = "".join([f"<span class='res-tag' style='margin-right:5px;'>📍 {pt}</span>" for pt in plan['points']])
+            # 拼装推荐资源
+            res_html = "".join([f"<span class='res-tag' style='margin-right:5px; background:#eef;'>🛠️ {res}</span>" for res in plan['resources']])
+            
+            st.markdown(f"""
+            <div class="task-card">
+                <p>🎯 <b>魔鬼突击目标：</b>{plan['goal']}</p>
+                <p style="margin: 8px 0;">💡 <b>必须吃透的核心考点：</b><br>{points_html}</p>
+                <div style="background:#fff; padding:10px; border-radius:6px; border:1px solid #e1f5ee; margin: 10px 0;">
+                    <span class="kpi-tag">🏅 唯一验收标准(KPI)</span>
+                    <p style="margin-top:5px; font-size:13px; color:#0F6E56; font-weight:bold;">{plan['kpi']}</p>
                 </div>
-                """, unsafe_allow_html=True)
-            st.write("") # 增加间距
+                <p style="margin-top: 8px; font-size:12px;">📚 <b>推荐踩坑资源：</b>{res_html}</p>
+            </div>
+            """, unsafe_allow_html=True)
