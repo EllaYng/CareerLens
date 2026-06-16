@@ -60,4 +60,4 @@ streamlit run app.py
 ## 作者
 
 EllaYng 
-[GitHub主页](https://github.com/EllaYng) | [产品PRD文档](docs/cnAgent_PRD_v2.0.md) | [查看完整截图](docs/screenshots/)
+[GitHub主页](https://github.com/EllaYng) | [产品PRD文档](docs/PRD_v2.0.md) | [查看完整截图](docs/screenshots/)
