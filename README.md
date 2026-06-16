@@ -1,4 +1,4 @@
-# 🧭 求职情报站 · AI职业导航 Agent v2.0
+# 🧭 CareerLens · AI职业导航Agent v2.0
 
 > 拒绝黑盒评分，拒绝鸡汤建议。输入真实JD + 你的简历，得到可执行的职业诊断报告。
 
@@ -44,7 +44,7 @@ Plotly雷达图 + 数据明细表 + KPI卡片渲染
 ## 本地运行
 
 ```bash
-git clone https://github.com/EllaYng/job-intel-station
+git clone https://github.com/EllaYng/CareerLens
 cd job-intel-station
 pip install -r requirements.txt
 cp .env.example .env   # 填入你的DeepSeek API Key
