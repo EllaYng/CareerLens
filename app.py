@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 import pandas as pd
 from openai import OpenAI
 import PyPDF2
+import re
 
 # 读取 API Key
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
@@ -44,6 +45,49 @@ def extract_text_from_pdf(uploaded_file):
         return text
     except Exception as e:
         return f"无法读取简历内容: {e}"
+
+# JSON 解析与校验函数（五层防护）
+def parse_llm_json(raw_content):
+    # 第一层：剥离 Markdown 代码块（兼容大小写和空格变体）
+    clean = re.sub(r'```[\w]*\n?', '', raw_content).strip()
+
+    # 第二层：提取最外层 JSON 对象，去除前置解释文字
+    start = clean.find('{')
+    end = clean.rfind('}') + 1
+    if start == -1 or end == 0:
+        raise ValueError("未在模型输出中找到有效的 JSON 结构，请重新诊断。")
+    clean = clean[start:end]
+
+    # 第三层：反序列化
+    result = json.loads(clean)
+
+    # 第四层：关键字段存在性校验
+    required_top = ['jd_profile', 'analysis', 'action_roadmap']
+    for key in required_top:
+        if key not in result:
+            raise ValueError(f"模型输出缺少必要字段：{key}，请重新诊断。")
+    if 'match_score' not in result['analysis']:
+        raise ValueError("模型输出缺少 match_score 字段，请重新诊断。")
+    if 'calculation_table' not in result['analysis']:
+        raise ValueError("模型输出缺少 calculation_table 字段，请重新诊断。")
+
+    # 第五层：数学一致性校验（加权贡献分之和必须等于 match_score，允许 ±1 误差）
+    table = result['analysis']['calculation_table']
+    match_score = result['analysis']['match_score']
+    if isinstance(match_score, str):
+        match_score = float(match_score.replace('%', ''))
+        result['analysis']['match_score'] = match_score
+    total = sum(
+        float(str(row.get('weighted_score', 0)).replace('%', ''))
+        for row in table
+    )
+    if abs(total - match_score) > 1:
+        raise ValueError(
+            f"模型输出数学不一致：各项加权分之和为 {total:.1f}，但 match_score 为 {match_score}，请重新诊断。"
+        )
+
+    return result
+
 
 # 大模型核心调用函数
 def generate_advanced_career_agent(jd_text, resume_text, experience):
@@ -100,8 +144,7 @@ JSON 数据结构必须严格如下：
     )
     
     raw_content = response.choices[0].message.content
-    clean_content = raw_content.replace('```json', '').replace('```', '').strip()
-    return json.loads(clean_content)
+    return parse_llm_json(raw_content)
 
 # 初始化 Session State 状态机
 if "agent_v2_data" not in st.session_state:
