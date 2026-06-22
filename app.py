@@ -57,7 +57,7 @@ def extract_text_from_pdf(uploaded_file):
     except Exception as e:
         return f"无法读取简历内容: {e}"
 
-# JSON 解析与校验函数（五层防护）
+# JSON 解析与校验函数（四层防护 + 代码端计算）
 def parse_llm_json(raw_content):
     # 第一层：剥离 Markdown 代码块（兼容大小写和空格变体）
     clean = re.sub(r'```[\w]*\n?', '', raw_content).strip()
@@ -77,25 +77,35 @@ def parse_llm_json(raw_content):
     for key in required_top:
         if key not in result:
             raise ValueError(f"模型输出缺少必要字段：{key}，请重新诊断。")
-    if 'match_score' not in result['analysis']:
-        raise ValueError("模型输出缺少 match_score 字段，请重新诊断。")
     if 'calculation_table' not in result['analysis']:
         raise ValueError("模型输出缺少 calculation_table 字段，请重新诊断。")
 
-    # 第五层：数学一致性校验（加权贡献分之和必须等于 match_score，允许 ±1 误差）
     table = result['analysis']['calculation_table']
-    match_score = result['analysis']['match_score']
-    if isinstance(match_score, str):
-        match_score = float(match_score.replace('%', ''))
-        result['analysis']['match_score'] = match_score
-    total = sum(
-        float(str(row.get('weighted_score', 0)).replace('%', ''))
-        for row in table
-    )
-    if abs(total - match_score) > 1:
+    if not table:
+        raise ValueError("模型输出的 calculation_table 为空，请重新诊断。")
+
+    # 第五层（改造后）：由代码自己计算加权分和总分，不再依赖大模型做数学题
+    # 大模型只负责给出每个维度的 score（得分）和 weight（权重），
+    # weighted_score（加权贡献分）和 match_score（总分）都由 Python 算出来，
+    # 这样从根本上消除"模型自己算错"导致的数学不一致问题。
+    total_weight = 0
+    for row in table:
+        score = float(str(row.get('score', 0)).replace('%', ''))
+        weight = float(str(row.get('weight', 0)).replace('%', ''))
+        row['score'] = score
+        row['weight'] = weight
+        row['weighted_score'] = round(score * weight / 100, 1)
+        total_weight += weight
+
+    # 权重之和应为100，允许 ±2 的误差（模型给的权重小数点凑整偏差）
+    if abs(total_weight - 100) > 2:
         raise ValueError(
-            f"模型输出数学不一致：各项加权分之和为 {total:.1f}，但 match_score 为 {match_score}，请重新诊断。"
+            f"模型输出的权重之和为 {total_weight:.1f}%，不等于100%，请重新诊断。"
         )
+
+    match_score = round(sum(row['weighted_score'] for row in table), 1)
+    result['analysis']['match_score'] = match_score
+    result['analysis']['formula'] = "总分 = Σ（各维度得分 × 该维度权重），由系统自动计算，权重之和为100%"
 
     return result
 
@@ -114,7 +124,7 @@ def generate_advanced_career_agent(jd_text, resume_text, experience):
 
 请完成以下三层任务，并严格输出 JSON 格式。不要包含 ```json 等 Markdown 标记，确保其可以直接被 json.loads 解析：
 1. 岗位画像：从 JD 中逆向推导其最看重的 5 个核心能力维度及评分、核心高频关键词、以及招聘描述里透露出的典型业务项目。
-2. 能力分析与加权计算：计算匹配度（满分100%）。**必须给出明确的数学计算公式与权重比例**，让用户心服口服。找出 2-3 个核心 Gap。
+2. 能力分析：针对每个核心维度，给出用户在该维度的得分（0-100）以及该维度在总分中的权重（5个维度权重之和必须正好等于100%）。**不需要你计算加权分和总分，这部分由系统自动计算**，你只需要给出每个维度的原始得分和权重比例。找出 2-3 个核心 Gap。
 3. 落地路线图：针对 Gap，制定前两周（Week 1 和 Week 2）的魔鬼通关计划，必须包含「具体目标」、「核心考点」以及极具可执行性的「验收标准(KPI)」。
 
 JSON 数据结构必须严格如下：
@@ -126,10 +136,12 @@ JSON 数据结构必须严格如下：
         "typical_projects": ["项目背景/场景1", "项目背景/场景2"]
     }},
     "analysis": {{
-        "match_score": 72,
-        "formula": "总分 = 核心维度1(30%) + 核心维度2(30%) + ...",
         "calculation_table": [
-            {{"dimension": "维度1", "score": 80, "weight": "30%", "weighted_score": 24}}
+            {{"dimension": "维度1", "score": 80, "weight": 30}},
+            {{"dimension": "维度2", "score": 70, "weight": 25}},
+            {{"dimension": "维度3", "score": 60, "weight": 20}},
+            {{"dimension": "维度4", "score": 75, "weight": 15}},
+            {{"dimension": "维度5", "score": 65, "weight": 10}}
         ],
         "gaps": [
             {{"name": "Gap名称", "desc": "具体能力欠缺描述", "priority": "高"}}
@@ -250,8 +262,10 @@ with tab2:
         # 2. 计算明细表
         st.markdown("#### 🔢 维度得分明细表")
         df_calc = pd.DataFrame(analysis['calculation_table'])
-        df_calc.columns = ["评估维度", "你的得分", "权重占比", "加权贡献分"]
+        df_calc = df_calc[['dimension', 'score', 'weight', 'weighted_score']]
+        df_calc.columns = ["评估维度", "你的得分", "权重占比(%)", "加权贡献分"]
         st.table(df_calc)
+        st.caption("加权贡献分 = 你的得分 × 权重占比，由系统自动计算，确保数学准确无误。")
         
         st.divider()
         
