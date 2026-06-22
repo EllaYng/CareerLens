@@ -3,4 +3,5 @@ requests
 openai
 python-dotenv
 plotly
+pandas
 PyPDF2

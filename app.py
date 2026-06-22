@@ -1,5 +1,3 @@
-from dotenv import load_dotenv
-load_dotenv()
 import streamlit as st
 import os
 import json
@@ -9,8 +7,21 @@ from openai import OpenAI
 import PyPDF2
 import re
 
-# 读取 API Key
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+# 本地开发时从 .env 读取；部署到 Streamlit Cloud 时该文件不存在，
+# 用 try/except 避免本地没装 python-dotenv 或没有 .env 文件时报错
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+# 读取 API Key：优先从 Streamlit Cloud 的 Secrets 读取，
+# 本地开发时回退到环境变量（.env）
+DEEPSEEK_API_KEY = st.secrets.get("DEEPSEEK_API_KEY", os.getenv("DEEPSEEK_API_KEY"))
+
+if not DEEPSEEK_API_KEY:
+    st.error("⚠️ 未检测到 DEEPSEEK_API_KEY，请检查 Secrets 配置或本地 .env 文件。")
+    st.stop()
 
 # DeepSeek 客户端
 client = OpenAI(
