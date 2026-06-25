@@ -105,7 +105,15 @@ def parse_llm_json(raw_content):
 
     match_score = round(sum(row['weighted_score'] for row in table), 1)
     result['analysis']['match_score'] = match_score
-    result['analysis']['formula'] = "总分 = Σ（各维度得分 × 该维度权重），由系统自动计算，权重之和为100%"
+
+    # 公式文本同样由代码拼出，而不是用模型生成的文字——
+    # 保证公式里显示的维度名称和权重，跟 calculation_table 里实际参与计算的数字
+    # 永远保持一致，不会出现"公式写的权重"和"表格权重"不一样的情况。
+    formula_parts = [
+        f"{row['dimension']}({row['weight']:.0f}%)×得分"
+        for row in table
+    ]
+    result['analysis']['formula'] = "总分 = " + " + ".join(formula_parts)
 
     return result
 
