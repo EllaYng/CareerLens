@@ -198,7 +198,10 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("**2. 提供你的个人简历**")
-    uploaded_file = st.file_uploader("上传个人简历 (PDF)", type=["pdf"])
+    uploaded_file = st.file_uploader(
+    "📄 上传你的简历（PDF）",
+    type=["pdf"],
+    help="建议上传 20MB 以内的 PDF 简历，系统将自动解析你的项目经历、技能和教育背景，用于与目标岗位进行匹配分析。")
     manual_resume = st.text_area("或者直接粘贴你的经历简述", height=150, placeholder="例如：两年开发经验，熟悉Python，但没有独立做过产品经理...")
 
     st.markdown("---")
